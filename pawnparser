@@ -1,0 +1,101 @@
+#!/bin/bash
+
+## PawnParser, a bash script for parsing Pawn directories/files for functions.
+## The functions are sorted out into a text file, which can be imported 
+## by for instance a Snippet Generator, in order to create text editor snippets (like VSCode snippets).
+
+## TODO: Fix single file parse (non-recursive option), look into improving regex / parsing
+## Snippet Generator: Will be rewritten later, here is a version from 2017 though:
+### https://pastebin.com/p7n6uH2H
+
+# Regex to identify Pawn functions
+PAWN_FUNCTION_REGEX='(?!.*;)(?=.*|\s*\{)^[a-z]* *[a-z]*:?[a-z]+\(.*\)';
+
+# Output file names!
+OUTPUT_PARSE_CONTEXT="parsedContext.txt";
+OUTPUT_PARSE_IMPORT="parsedImport.txt";
+
+# Whether or not .inc files should be parsed 
+doInclude=false;
+# Whether or not subdirectories should be parsed as well
+recursive=false;
+# The specified initial directory (only directory if recursive is false)
+folder="";
+
+## Functions
+
+# Checks whether or not the set target directory is valid
+function checkDirectoryValid() {
+    if [[ -d $folder ]]; then
+        if ! [[ -r $folder ]]; then
+            echo "You do not have read access to $folder.";
+            exit 0;
+        fi
+        echo "Print Working Directory: \"$(pwd)\"";
+        echo "The specified folder $folder is a valid directory and has been selected.";
+        return 0;
+    else
+        echo "The specified directory $folder does not appear to exist.";
+        exit;
+    fi
+}
+
+# Parses the directory/file based on the arguments
+function handleDirectoryParse() {
+    echo "Searching through file(s)...";
+    if ($recursive); then   
+        grep -Poh -r -i --include=*.{inc,pwn} "(?!.*;)(?=.*|\s*\{)^[a-z]* *([a-z]*:?[a-z]+\(.*\))" $folder | uniq -u > $OUTPUT_PARSE_CONTEXT
+    else
+        grep -Poh -r -i --exclude-dir={$(ls -d $folder/*/)} --include=*.{inc,pwn} "(?!.*;)(?=.*|\s*\{)^[a-z]* *([a-z]*:?[a-z]+\(.*\))" $folder | uniq -u > $OUTPUT_PARSE_CONTEXT
+    fi
+    prepareParsedList;
+}
+
+# Prepares the list for import (removes non-functions that aren't caught by regex-TODO:improve regex)
+function prepareParsedList() {
+    echo "Sorting through parsed context...";
+    echo "Clearing whitespaces...";
+    awk '{$1=$1;print}' $OUTPUT_PARSE_CONTEXT > $OUTPUT_PARSE_IMPORT;    
+    echo "Whitespaces cleared, filtering non-functions...";
+
+    awk 'BEGIN{IGNORECASE = 1}!/^if.*|\|\||^CMD.*|^format\(.*|^print\(.*|^switch.*|^hook.*|^foreach.*|^public .*/;' $OUTPUT_PARSE_IMPORT > tmpFile && mv tmpFile $OUTPUT_PARSE_IMPORT;
+    echo "Non-functions should now be cleared. If you notice any issues, please submit an issue or a pull request.";
+}
+
+## Argument parsing
+
+# Abort if no argument is given
+if [[ $# -eq 0 ]]; then
+    echo "What folder do you want to parse files in? Check out -h(elp) for more information.";
+    exit 0;
+fi
+
+# Parse arguments
+while [[ -n $1 ]]; do
+    case $1 in
+        -r | --recursive)
+            recursive=true;
+            echo "Recursive mode is enabled.";
+            ;;
+        -h | --help)
+            echo "$0 (directory) [-r] [-h] ([] flags optional) - program to parse pawn functions and append to textfile
+            
+            where:
+                -r (--recursive) recursively go through subdirectories
+                -h (--help) view this help information";
+            exit;    
+            ;;
+        *)
+            folder=$1;
+            echo "$folder has been specified as the target directory. Checking validity.";
+            checkDirectoryValid;
+            ;;
+    esac
+    shift;
+done
+
+# Call functions based on arguments given 
+if $recursive; then
+    echo "Recursive mode is activated. Parsing the directory recursively.";
+    handleDirectoryParse;
+fi
